@@ -15,7 +15,7 @@ import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 
-from rnn import MDNRNN, default_hps, rnn_output
+from rnn import MDNRNN, default_hps, rnn_output,rnn_next_state
 
 from use import USE
 
@@ -28,6 +28,8 @@ MODE_ZH = 4
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+action_dic = { 0:'look', 1:'inventory', 2:'go north', 3:'go east', 4:'go west', 5:'go south', 6:'take coin', 7:'examine coin' }
 
 print(device)
 
@@ -44,12 +46,11 @@ class CommandScorer(nn.Module):
         #USE for embeddings
         self.embedding = USE() 
 
-
-
         #Imagination
-        self.RNN = MDNRNN(default_hps)
-        self.RNN.load_json("./tf_rnn/rnn_con_similarity_5.json")
-        self.rnn_state = self.RNN.sess,run(self.RNN.initial_state)
+        self.hps = default_hps()
+        self.RNN = MDNRNN(self.hps)
+        self.RNN.load_json("tf_rnn/valid_statico_5.json")
+        self.rnn_state = self.RNN.sess.run(self.RNN.initial_state)
 
         ###################################################
         self.hidden_size  = hidden_size #Ideally 512
@@ -60,27 +61,28 @@ class CommandScorer(nn.Module):
         self.critic_h1    = nn.Linear(1024, hidden_size)
         self.critic       = nn.Linear(hidden_size, 1)
         
-        self.att_cmd      = nn.Linear(hidden_size * 2, 1)
+        self.att_cmd      = nn.Linear(hidden_size * 3, 1)
     
 
     def forward(self, obs, commands, **kwargs):
 
-        input_length = obs.size(0)
-        batch_size = obs.size(1)
-        nb_cmds = commands.size(1)
-
+        #input_length = obs.size(0)
+        #batch_size = obs.size(1)
+        #nb_cmds = commands.size(1)
+        nb_cmds = len(commands)
         #embedded = self.embedding(obs) Change the embedding to USE
         #TF
         embedded = self.embedding.embed(obs)
-
+        embedded = np.reshape(embedded,512)
+    
         #Use the immagination
         #TF
-        memory = rnn_output(self.rnn_state, embedded, mode) #1024 Includes the embeddings
+        memory = rnn_output(self.rnn_state, embedded, MODE_ZH) #1024 Includes the embeddings
 
         # Wee no longer need the GRUs
         #encoder_output, encoder_hidden = self.encoder_gru(embedded)
         #state_output, state_hidden = self.state_gru(encoder_hidden, self.state_hidden)
-
+        memory = torch.from_numpy(memory)
         h1 = self.critic_h1(memory) #Can be changed to use the embedding
         value = self.critic(h1)
 
@@ -90,21 +92,27 @@ class CommandScorer(nn.Module):
 
         #use USE to embed the  commands.
         cmds_embedding = self.embedding.embed_sentences(commands) #List of embeddings
-
+        command_list =  []
+        for i in range(len(cmds_embedding)):
+            command_list.append(np.reshape(cmds_embedding[i],512))
+        command_list = torch.from_numpy(np.array(command_list))
         # Same observed state for all commands.
-        cmd_selector_input = torch.stack([memory] * nb_cmds, 2)  # 1 x batch x cmds x hidden
-
+        cmd_selector_input = torch.stack([memory] * nb_cmds, 0)  # 1 x batch x cmds x hidden
+        
         # Same command choices for the whole batch.
-        cmds_encoding_last_states = torch.stack([cmds_encoding_last_states] * batch_size, 1)  # 1 x batch x cmds x hidden
+        #cmds_encoding_last_states = torch.stack([command_list] * 1, 0)  # 1 x batch x cmds x hidden
 
         # Concatenate the observed state and command encodings.
-        cmd_selector_input = torch.cat([cmd_selector_input, cmds_encoding_last_states], dim=-1)
+        #print(cmd_selector_input.shape)
+        #print(command_list.shape)
+        cmd_selector_input = torch.cat([cmd_selector_input, command_list], dim=-1)
 
         # Compute one score per command.
         scores = F.relu(self.att_cmd(cmd_selector_input)).squeeze(-1)  # 1 x Batch x cmds
-
-        probs = F.softmax(scores, dim=2)  # 1 x Batch x cmds
-        index = probs[0].multinomial(num_samples=1).unsqueeze(0) # 1 x batch x indx
+        #print(scores.shape)
+        probs = F.softmax(scores, dim=0)  # 1 x Batch x cmds
+        #print(probs)
+        index = probs.multinomial(num_samples=1).unsqueeze(0) # 1 x batch x indx
         return scores, index, value
 
     def reset_hidden(self, batch_size):
@@ -127,8 +135,8 @@ class NeuralAgent:
     def __init__(self) -> None:
         self._initialized = False
         self._epsiode_has_started = False
-        self.id2word = ["<PAD>", "<UNK>"] #We can do without
-        self.word2id = {w: i for i, w in enumerate(self.id2word)} #we can do without
+        self.id2word = { 0:'look', 1:'inventory', 2:'go north', 3:'go east', 4:'go west', 5:'go south', 6:'take coin', 7:'examine coin' }
+        self.word2id = { 'look':0, 'inventory':1, 'go north':2, 'go east':3, 'go west':4, 'go south':5, 'take coin':6, 'examine coin':7 }
         
 
         self.model = CommandScorer(input_size=self.MAX_VOCAB_SIZE, hidden_size=512) #The input size might be removed since it is not used
@@ -205,10 +213,22 @@ class NeuralAgent:
         #commands_tensor = self._process(infos["admissible_commands"])
         
         # Get our next action and value prediction.
-        
-        outputs, indexes, values = self.model(input_tensor, commands_tensor)
+        outputs, indexes, values = self.model(obs, infos["admissible_commands"])
         action = infos["admissible_commands"][indexes[0]]
         
+        obs_emb = self.model.embedding.embed(infos["description"])
+        obs_emb = np.reshape(obs_emb, 512)
+        act = np.zeros(8)
+        print("\nAAAAAAAAAAAAAAAAA",indexes.shape)
+        index = int(indexes[0][0])
+        print("BBBBBBBBBb", index)
+        selected_cmd = infos["admissible_commands"][index]
+        rnn_act = self.word2id[selected_cmd]
+        print(selected_cmd)
+        print(rnn_act)
+        act[rnn_act] = 1
+        self.model.rnn_state = rnn_next_state(self.model.RNN, obs_emb , act, self.model.rnn_state)
+
         if self.mode == "test":
             if done:
                 self.model.reset_hidden(1)

@@ -38,7 +38,7 @@ if not os.path.exists(initial_z_save_path):
 def default_hps():
   return HyperParams(num_steps= 1000,
                      max_seq_len=seq,
-                     input_seq_width=512+8,    # width of our data (512 + 821 actions)
+                     input_seq_width=512+8,    # width of our data (512 + 8 actions)
                      output_seq_width=512,    # width of our data is 32
                      rnn_size=512,    # number of rnn cells
                      batch_size=30,   # minibatch sizes
@@ -450,6 +450,3 @@ def SGD(epochs):
     plt.plot(coss_simmilarity_list_test)
     plt.plot(coss_simmilarity_list_train)
     plt.show()      
-
-rnn.load_json('tf_rnn/valid_statico_5_abs_cost.json')
-validate(rnn)

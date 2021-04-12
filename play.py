@@ -3,6 +3,9 @@ from glob import glob
 import gym
 import textworld.gym
 
+import A2C
+
+agent = A2C.NeuralAgent()
 
 def play(agent, path, max_step=100, nb_episodes=10, verbose=True):
     infos_to_request = agent.infos_to_request
@@ -50,3 +53,5 @@ def play(agent, path, max_step=100, nb_episodes=10, verbose=True):
             print(msg.format(np.mean(avg_moves), np.mean(avg_norm_scores), 1))
         else:
             print(msg.format(np.mean(avg_moves), np.mean(avg_scores), infos["max_score"]))
+
+play(agent,"games/tw-coin_collector-qDiPhg-house-mo-KEe7S5rjtKb5sO8Y.ulx")

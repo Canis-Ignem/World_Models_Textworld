@@ -166,3 +166,6 @@ def SGD_data(path,size):
 
     return final_dataset
 
+df = pd.read_pickle("./Datasets/train1.pkl")
+
+print(df['act'].unique())
