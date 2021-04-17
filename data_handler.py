@@ -4,7 +4,7 @@ import numpy as np
 import time
 from tqdm import tqdm
 import use
-#u = use.USE()
+u = use.USE()
 
 def load_json( jsonfile='train_dataset.json'):
     with open(jsonfile, 'r') as f:
@@ -17,7 +17,7 @@ def pandas_load(jsonfile='train_dataset.json'):
     return df
 
 def get_unique_actions(df):
-    res = pd.unique(df["act"])
+    res = pd.unique(df["cmd"])
     return res
 
 def action_to_num(df):
@@ -121,14 +121,25 @@ def create_Data_Multiple(data, batch_size, look_back,  index_to_predict, batch_i
     return X,Y
 
 
+
+def clean_obs(df):
+
+    for i in range(df.shape[0]):
+        df[i][0] = df.values[i][0].replace("\n"," ")
+
 def new_preprocess(df):
     
-    accions = get_unique_actions(df)
-    d = action_to_num(accions)
+    actions = get_unique_actions(df)
+    d = action_to_num(actions)
     for i in range(df.shape[0]):
         #print(d[df.values[i][1]])
         df.values[i][1] = d[df.values[i][1]]
-    df.to_pickle('valid1.pkl')
+        obs = df.values[i][0].replace("\n"," ")
+        emb_obs = u.embed(obs)
+        emb_obs = np.reshape(emb_obs, 512) 
+        df.values[i][0] = emb_obs
+    df.to_pickle('simple_train_preprocessed.pkl')
+    return df #df.to_pickle('valid1.pkl')
 
 def create_val_data(data):
     
@@ -166,6 +177,9 @@ def SGD_data(path,size):
 
     return final_dataset
 
-df = pd.read_pickle("./Datasets/train1.pkl")
+df = pd.read_pickle("./Datasets/simple_train_data.pkl")
+print(df.head(10))
 
-print(df['act'].unique())
+df = new_preprocess(df)
+
+print(df.head(10))
