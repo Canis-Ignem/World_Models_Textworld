@@ -6,15 +6,6 @@ from tqdm import tqdm
 import use
 u = use.USE()
 
-def load_json( jsonfile='train_dataset.json'):
-    with open(jsonfile, 'r') as f:
-        params = json.load(f)
-    return params
-
-
-def pandas_load(jsonfile='train_dataset.json'):
-    df = pd.read_json(jsonfile, lines= True)
-    return df
 
 def get_unique_actions(df):
     res = pd.unique(df["cmd"])
@@ -31,66 +22,12 @@ def action_to_num(df):
 def get_num(d,s):
     return d[s]
 
-#Deprecated
-def processed_data(data):
-    encodings = []
-    actions = []
-    df = pd.DataFrame(columns=['obs','n'])
-    accions = get_unique_actions(data)
-    d = action_to_num(accions)
-    j = 0
-    N = data.shape[0]
-    for i in tqdm (range(N), desc= "Processing..."):
-        enc = u.embed(data.values[i][0])
-        enc = np.array(enc)
-        enc.resize((512,))
-        action = d[data.values[i][1]]
-        encodings.append(enc)
-        actions.append(action)
-    df = pd.DataFrame({'obs':encodings,'n':actions})
-    p_data =np.array(df)
-    with open('p_data.pkl','wb') as f:
-        df.to_pickle(f)
-    return df
-
-#Deprecated
-def processed_test_data():
-    train = pandas_load()
-    test = pandas_load(jsonfile = 'test_dataset.json')
-
-    train_actions = get_unique_actions(train)
-    test_actions = get_unique_actions(test)
-
-    dif = []
-    for i in test_actions:
-        if i not in train_actions:
-            dif.append(i)
-
-    u_actions = get_unique_actions(train)
-    d = action_to_num(u_actions)
-    N = test.shape[0]
-    
-    encodings = []
-    actions = []
-    for i in tqdm (range(N), desc= "Processing..."):
-        if test.values[i][1] in u_actions:
-            enc = u.embed(test.values[i][0])
-            enc = np.array(enc)
-            enc.resize((512,))
-            action = d[test.values[i][1]]
-            encodings.append(enc)
-            actions.append(action)
-    df = pd.DataFrame({'obs':encodings,'n':actions})
-    p_data =np.array(df)
-    with open('p_test_data.pkl','wb') as f:
-        df.to_pickle(f)
-    return df
 
 
 def create_batch(data, batch_size, look_back):
     indices = np.random.permutation(data.shape[0])[0:batch_size]
     n_seq = data.shape[-1]
-    X = np.zeros((batch_size,look_back,512+8))
+    X = np.zeros((batch_size,look_back,512+454))
     Y = np.zeros((batch_size,look_back,512))
     for i in range(len(indices)):
         create_Data_Multiple(data, batch_size, look_back, indices[i], i, X, Y)
@@ -104,7 +41,7 @@ def create_Data_Multiple(data, batch_size, look_back,  index_to_predict, batch_i
     while i < look_back  and index_to_predict -i >0:
         
         obs = data[index_to_predict-1-i,0]
-        acc = np.zeros(8)
+        acc = np.zeros(454)
         acc[data[index_to_predict-i,1]] = 1
         a = np.concatenate((obs,acc), axis=0)
         
@@ -127,25 +64,64 @@ def clean_obs(df):
     for i in range(df.shape[0]):
         df[i][0] = df.values[i][0].replace("\n"," ")
 
-def new_preprocess(df):
+def new_preprocess(train, test, valid):
     
-    actions = get_unique_actions(df)
+    actions = get_unique_actions(train)
     d = action_to_num(actions)
-    for i in range(df.shape[0]):
-        #print(d[df.values[i][1]])
-        df.values[i][1] = d[df.values[i][1]]
-        obs = df.values[i][0].replace("\n"," ")
+
+    l = []
+    print("Processing the trainning data")
+    for i in tqdm(range(train.shape[0])):
+        
+        obs = train.values[i][0].replace("\n"," ")
         emb_obs = u.embed(obs)
         emb_obs = np.reshape(emb_obs, 512) 
-        df.values[i][0] = emb_obs
-    df.to_pickle('simple_train_preprocessed.pkl')
-    return df #df.to_pickle('valid1.pkl')
+        train.values[i][0] = emb_obs
+        train.values[i][1] = d[train.values[i][1]]
+    
+
+    train.to_pickle('./Datasets/simple_train_preprocessed.pkl')
+    print("Processing the testing data")
+    for i in tqdm(range(test.shape[0])):
+        pair = []
+        if test.values[i][1] in d:
+            obs = test.values[i][0].replace("\n"," ")
+            emb_obs = u.embed(obs)
+            emb_obs = np.reshape(emb_obs, 512) 
+            pair.append(emb_obs)
+            pair.append(d[test.values[i][1]])
+            l.append(pair)
+       
+        '''
+        test.values[i][1] = d[test.values[i][1]]
+        obs = test.values[i][0].replace("\n"," ")
+        emb_obs = u.embed(obs)
+        emb_obs = np.reshape(emb_obs, 512) 
+        test.values[i][0] = emb_obs
+        '''
+    test = pd.DataFrame(l, columns={'obs','cmd'})
+    test.to_pickle('./Datasets/simple_test_preprocessed.pkl')
+    l= []
+    print("Processing the validation data")
+    for i in tqdm(range(valid.shape[0])):
+        pair = []
+        if valid.values[i][1] in d:
+            obs = valid.values[i][0].replace("\n"," ")
+            emb_obs = u.embed(obs)
+            emb_obs = np.reshape(emb_obs, 512) 
+            pair.append(emb_obs)
+            pair.append(d[valid.values[i][1]])
+            l.append(pair)
+
+    valid = pd.DataFrame(l, columns={'obs','cmd'})
+    valid.to_pickle('./Datasets/simple_valid_preprocessed.pkl')
+
 
 def create_val_data(data):
     
     final_data = []
     for i in data:
-        acc_arr = np.zeros((1,1,8)) 
+        acc_arr = np.zeros((1,1,454)) 
         obs = i[0]
         obs = np.expand_dims(obs,0)
         obs = np.expand_dims(obs,0)
@@ -162,8 +138,8 @@ def SGD_data(path,size):
     data = data.values
     data = data[:size]
 
-    ohe = np.zeros(8)
-    final_dataset = np.zeros((size, 520))
+    ohe = np.zeros(454)
+    final_dataset = np.zeros((size, 512+454))
 
     for i in range(size):
         ohe[ data[i][1] ] = 1
@@ -171,15 +147,17 @@ def SGD_data(path,size):
         ohe = np.zeros(8)
         final_dataset[i] = final_data
 
-    final_dataset= np.reshape(final_dataset,(int(size/5),5,520))
+    final_dataset= np.reshape(final_dataset,(int(size/5),5,512+454))
     rnd = np.random.permutation(int(size/5)) 
     final_dataset = final_dataset[rnd]
 
     return final_dataset
 
-df = pd.read_pickle("./Datasets/simple_train_data.pkl")
-print(df.head(10))
 
-df = new_preprocess(df)
+'''
+train = pd.read_pickle("./Datasets/simple_train_data.pkl")
+test = pd.read_pickle("./Datasets/simple_test_data.pkl")
+valid = pd.read_pickle("./Datasets/simple_valid_data.pkl")
 
-print(df.head(10))
+new_preprocess(train, test, valid)
+'''

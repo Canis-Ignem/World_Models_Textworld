@@ -38,7 +38,7 @@ HyperParams = namedtuple('HyperParams', ['num_steps',
 def default_hps():
       return HyperParams(num_steps= 4000,
                      max_seq_len=100,
-                     input_seq_width=512+8,    # width of our data (512 + 821 actions)
+                     input_seq_width=512+437,    # width of our data (512 + 437 actions)
                      output_seq_width=512,    # width of our data is 32
                      rnn_size=512,    # number of rnn cells
                      batch_size=30,   # minibatch sizes
@@ -102,7 +102,7 @@ class MDNRNN():
     use_recurrent_dropout = False if self.hps.use_recurrent_dropout == 0 else True
     use_input_dropout = False if self.hps.use_input_dropout == 0 else True
     use_output_dropout = False if self.hps.use_output_dropout == 0 else True
-    is_training = False if self.hps.is_training == 0 else True
+    self.is_training = False if self.hps.is_training == 0 else True
     use_layer_norm = False if self.hps.use_layer_norm == 0 else True
 
     if use_recurrent_dropout:
@@ -176,7 +176,7 @@ class MDNRNN():
 
     self.cost = tf.reduce_mean(lossfunc)
 
-    if self.hps.is_training == 1:
+    if self.is_training:
       self.lr = tf.Variable(self.hps.learning_rate, trainable=False)
       optimizer = tf.train.AdamOptimizer(self.lr)
 
@@ -294,7 +294,7 @@ def sample_sequence(sess, s_model, hps, init_z, actions, temperature=1.0, seq_le
   strokes = np.zeros((seq_len, OUTWIDTH), dtype=np.float32)
 
   for i in range(seq_len):
-    input_x = np.concatenate((prev_x, actions[i].reshape((1, 30, 821))), axis=2)
+    input_x = np.concatenate((prev_x, actions[i].reshape((1, 30, 437))), axis=2)
     print(input_x.shape)
     feed = {s_model.input_x: input_x, s_model.initial_state:prev_state}
     [logmix, mean, logstd, next_state] = sess.run([s_model.out_logmix, s_model.out_mean, s_model.out_logstd, s_model.final_state], feed)
@@ -331,7 +331,7 @@ def rnn_init_state(rnn):
   return rnn.sess.run(rnn.initial_state)
 
 def rnn_next_state(rnn, z, a, prev_state):
-  input_x = np.concatenate((z.reshape((1, 1, 512)), a.reshape((1, 1, 8))), axis=2)
+  input_x = np.concatenate((z.reshape((1, 1, 512)), a.reshape((1, 1, 437))), axis=2)
   feed = {rnn.input_x: input_x, rnn.initial_state[0] : prev_state[0], rnn.initial_state[1] : prev_state[1]}
   return rnn.sess.run(rnn.final_state, feed)
 

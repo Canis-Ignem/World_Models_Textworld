@@ -17,15 +17,14 @@ import matplotlib.pyplot as plt
 #The instance of the actual rnn in trainning
 seq = 5
 #rnn_actual_cost = "rnn_con_similarity_",str(seq),".json"
-rnn_actual_cost = "SGD.json"
-rnn_actual_simm = "SGD1.json"
+rnn_actual_cost = "simple_game_5_cost1024.json"
+rnn_actual_simm = "simple_game_5_simm1024.json"
 
 from rnn import HyperParams, MDNRNN, rnn_next_state, rnn_init_state, get_pi_idx, sample_sequence
 
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 np.set_printoptions(precision=4, edgeitems=6, linewidth=100, suppress=True)
 
-DATA_DIR = "series"
 model_save_path = "tf_rnn"
 if not os.path.exists(model_save_path):
   os.makedirs(model_save_path)
@@ -34,22 +33,23 @@ initial_z_save_path = "tf_initial_z"
 if not os.path.exists(initial_z_save_path):
   os.makedirs(initial_z_save_path)
 
-
+# 8 actions for coin collector
+# 454 actions for simple game
 def default_hps():
-  return HyperParams(num_steps= 1000,
+  return HyperParams(num_steps= 2000,
                      max_seq_len=seq,
-                     input_seq_width=512+8,    # width of our data (512 + 8 actions)
+                     input_seq_width=512+454,    # width of our data (512 + 437 actions)
                      output_seq_width=512,    # width of our data is 32
-                     rnn_size=512,    # number of rnn cells
+                     rnn_size=1024,    # number of rnn cells
                      batch_size=30,   # minibatch sizes
                      grad_clip=1.0,
                      num_mixture=5,   # number of mixtures in MDN
-                     learning_rate=0.0001,
+                     learning_rate=0.001,
                      decay_rate=1.0,
                      min_learning_rate=0.000001,
                      use_layer_norm=0, # set this to 1 to get more stable results (less chance of NaN), but slower
                      use_recurrent_dropout=1,
-                     recurrent_dropout_prob=0.90,
+                     recurrent_dropout_prob=0.60,
                      use_input_dropout=0,
                      input_dropout_prob=0.90,
                      use_output_dropout=0,
@@ -57,43 +57,29 @@ def default_hps():
                      is_training=1)
 
 
-hps_model = default_hps()
-
+hps = default_hps()
+batch_size = hps.batch_size
 
 #Training
-with open('./Datasets/train1.pkl','rb') as f:
-    data = pd.read_pickle(f)
-data = np.array(data)
-#obs = data['obs']
-#acc = data['n']
-N_data = data.shape[0]
-batch_size = hps_model.batch_size
+data = pd.read_pickle("./Datasets/simple_train_preprocessed.pkl")
+data = data.values
+
+
 
 #Testing
-with open('./Datasets/test1.pkl','rb') as f:
-    test_data = pd.read_pickle(f)
-#obs_test = data['obs']
-#acc_test = data['n']
-test_data = np.array(test_data)
-#N_data = data.shape[0]
+test_data = pd.read_pickle("./Datasets/simple_test_preprocessed.pkl")
+test_data = test_data.values
 
-#Valid
-with open('./Datasets/valid1.pkl','rb') as f:
-    valid_data = pd.read_pickle(f)
-#obs_test = data['obs']
-#acc_test = data['n']
-valid_data = np.array(valid_data)
-#N_data = data.shape[0]
+N_data = data.shape[0]
 
 
 
-
-rnn = MDNRNN(hps_model)
+rnn = MDNRNN(hps)
 
 best_cost = 100
 
 # train loop:
-hps = hps_model
+
 
 #EMPIEZA EL ENTRENAMIENTO
 def train():
@@ -109,10 +95,16 @@ def train():
   best_cost = 100
   best_simm = 0
   
+  curr_learning_rate = hps.learning_rate
+
   for local_step in range(hps.num_steps):
 
     step = rnn.sess.run(rnn.global_step)
-    curr_learning_rate = (hps.learning_rate-hps.min_learning_rate) * (hps.decay_rate) ** step + hps.min_learning_rate
+    
+    #curr_learning_rate = (hps.learning_rate-hps.min_learning_rate) * (hps.decay_rate) ** step + hps.min_learning_rate
+    if local_step % 200 == 0 and local_step != 0 and curr_learning_rate > hps.min_learning_rate:
+         curr_learning_rate *= 0.9
+    
     '''
     print(hps.min_learning_rate)
     print((hps.learning_rate-hps.min_learning_rate))
@@ -139,7 +131,7 @@ def train():
       #test_cost_list.append(test_cost)
       coss_sim = validate(rnn)
       coss_simmilarity_list_test.append(coss_sim)
-      if coss_simmilarity > best_simm:
+      if coss_sim > best_simm:
         rnn.save_json(os.path.join(model_save_path, rnn_actual_simm))
         best_simm = coss_sim 
         
@@ -166,13 +158,12 @@ def train():
 
 #VALIDACION
 def validate(rnn):
-      
-
-  with open('./Datasets/valid1.pkl','rb') as f:
-    data = pd.read_pickle(f)
-  data = np.array(data)
-  data = data[:3000]
-  data = dh.create_val_data(data)
+    
+  rnn.is_training = False
+  #Valid
+  valid_data = pd.read_pickle("./Datasets/simple_valid_preprocessed.pkl")
+  valid_data = valid_data.values[:3000]
+  valid_data = dh.create_val_data(valid_data)
 
   OUTWIDTH = hps.output_seq_width
   INWIDTH = hps.input_seq_width
@@ -183,10 +174,9 @@ def validate(rnn):
   prev_state = rnn.sess.run(rnn.initial_state)
   lista = []
 
-  for i in range(len(data)-1):
+  for i in range(len(valid_data)-1):
     
-    input_x = data[i]
-    #print("AAAAAAAAAAAAAAAAAAAAAAAAA",input_x.shape)
+    input_x = valid_data[i]
     feed = {rnn.input_x: input_x, rnn.initial_state[0] : prev_state[0], rnn.initial_state[1] : prev_state[1] }
     [logmix, mean, logstd, next_state] = rnn.sess.run([rnn.out_logmix, rnn.out_mean, rnn.out_logstd, rnn.final_state], feed)
 
@@ -216,9 +206,9 @@ def validate(rnn):
 
 
     #print(next_x.shape)
-    #print(data[i+1].shape)
-
-    corr = np.inner(next_x, data[i+1][0][0][:512])
+    #print(valid_data[i+1].shape)
+    #print(valid_data[i+1][0][0].shape)
+    corr = np.inner(next_x, valid_data[i+1][0][0][:512])
     lista.append(corr)
 
   k = len(lista)
@@ -226,6 +216,7 @@ def validate(rnn):
   for i in range(k):
     suma += lista[i]#[1]
   print("Validation cossine simmilarity: ",(suma/k))
+  rnn.is_training = True
   return suma/k
 
 
@@ -233,6 +224,8 @@ def validate(rnn):
 
 def sample(rnn):
 
+
+  rnn.is_training = False
   OUTWIDTH = hps.output_seq_width
   INWIDTH = hps.input_seq_width
 
@@ -294,14 +287,15 @@ def sample(rnn):
   suma = 0
   for i in range(k):
     suma += lista[i]#[1]
-  
+  rnn.is_training = True
   return suma/k
 
 
 def train_sim(rnn):
-  with open('./Datasets/train1.pkl','rb') as f:
-    data = pd.read_pickle(f)
-  data = np.array(data)[:3000]
+
+  rnn.is_training = False
+  data = pd.read_pickle("./Datasets/simple_train_preprocessed.pkl")
+  data = data.values[:3000]
   data = dh.create_val_data(data)
 
   OUTWIDTH = hps.output_seq_width
@@ -357,6 +351,7 @@ def train_sim(rnn):
   for i in range(k):
     suma += lista[i]#[1]
   print("Training cossine simmilarity: ",(suma/k))
+  rnn.is_training = True
   return suma/k
 
 
@@ -450,3 +445,6 @@ def SGD(epochs):
     plt.plot(coss_simmilarity_list_test)
     plt.plot(coss_simmilarity_list_train)
     plt.show()      
+
+
+train()
