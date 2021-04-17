@@ -2,14 +2,17 @@ import os
 from glob import glob
 import gym
 import textworld.gym
-
+from matplotlib import pyplot as plt
+import numpy as np
 import A2C
 
 agent = A2C.NeuralAgent()
 
-def play(agent, path, max_step=100, nb_episodes=10, verbose=True):
+def play(agent, path, max_step=200, nb_episodes=5, verbose=True):
     infos_to_request = agent.infos_to_request
     infos_to_request.max_score = True  # Needed to normalize the scores.
+    
+    wins = 0
     
     gamefiles = [path]
     if os.path.isdir(path):
@@ -36,7 +39,10 @@ def play(agent, path, max_step=100, nb_episodes=10, verbose=True):
         while not done:
             command = agent.act(obs, score, done, infos)
             obs, score, done, infos = env.step(command)
+            if score > 0:
+                wins +=1
             nb_moves += 1
+            #print(nb_moves)
         
         agent.act(obs, score, done, infos)  # Let the agent know the game is done.
                 
@@ -48,10 +54,18 @@ def play(agent, path, max_step=100, nb_episodes=10, verbose=True):
 
     env.close()
     msg = "  \tavg. steps: {:5.1f}; avg. score: {:4.1f} / {}."
+    '''
     if verbose:
         if os.path.isdir(path):
             print(msg.format(np.mean(avg_moves), np.mean(avg_norm_scores), 1))
         else:
             print(msg.format(np.mean(avg_moves), np.mean(avg_scores), infos["max_score"]))
+    '''
+    print(wins/nb_episodes)
 
-play(agent,"games/tw-coin_collector-qDiPhg-house-mo-KEe7S5rjtKb5sO8Y.ulx")
+agent.train()
+play(agent,"games/tw-coin_collector-qDiPhg-house-mo-KEe7S5rjtKb5sO8Y.ulx", nb_episodes=50)
+
+for stat in agent.stats["mean"]:
+    plt.plot(stat)
+    plt.show()

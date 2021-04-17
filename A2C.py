@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 from rnn import MDNRNN, default_hps, rnn_output,rnn_next_state
 
@@ -28,7 +29,7 @@ MODE_ZH = 4
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+torch.set_grad_enabled(True)
 action_dic = { 0:'look', 1:'inventory', 2:'go north', 3:'go east', 4:'go west', 5:'go south', 6:'take coin', 7:'examine coin' }
 
 print(device)
@@ -82,6 +83,7 @@ class CommandScorer(nn.Module):
         # Wee no longer need the GRUs
         #encoder_output, encoder_hidden = self.encoder_gru(embedded)
         #state_output, state_hidden = self.state_gru(encoder_hidden, self.state_hidden)
+
         memory = torch.from_numpy(memory)
         h1 = self.critic_h1(memory) #Can be changed to use the embedding
         value = self.critic(h1)
@@ -115,8 +117,8 @@ class CommandScorer(nn.Module):
         index = probs.multinomial(num_samples=1).unsqueeze(0) # 1 x batch x indx
         return scores, index, value
 
-    def reset_hidden(self, batch_size):
-        self.state_hidden = torch.zeros(1, batch_size, self.hidden_size, device=device)
+    #def reset_hidden(self, batch_size):
+    #    self.state_hidden = torch.zeros(1, batch_size, self.hidden_size, device=device)
 
 
 
@@ -137,7 +139,7 @@ class NeuralAgent:
         self._epsiode_has_started = False
         self.id2word = { 0:'look', 1:'inventory', 2:'go north', 3:'go east', 4:'go west', 5:'go south', 6:'take coin', 7:'examine coin' }
         self.word2id = { 'look':0, 'inventory':1, 'go north':2, 'go east':3, 'go west':4, 'go south':5, 'take coin':6, 'examine coin':7 }
-        
+        self.UPDATE_FREQUENCY = 1
 
         self.model = CommandScorer(input_size=self.MAX_VOCAB_SIZE, hidden_size=512) #The input size might be removed since it is not used
         self.optimizer = optim.Adam(self.model.parameters(), 0.00003)
@@ -148,13 +150,13 @@ class NeuralAgent:
         self.mode = "train"
         self.stats = {"max": defaultdict(list), "mean": defaultdict(list)}
         self.transitions = []
-        self.model.reset_hidden(1)
+        #self.model.reset_hidden(1)
         self.last_score = 0
         self.no_train_step = 0
     
     def test(self):
         self.mode = "test"
-        self.model.reset_hidden(1)
+        #self.model.reset_hidden(1)
         
     @property
     def infos_to_request(self) -> EnvInfos:
@@ -218,31 +220,31 @@ class NeuralAgent:
         
         obs_emb = self.model.embedding.embed(infos["description"])
         obs_emb = np.reshape(obs_emb, 512)
+
         act = np.zeros(8)
-        print("\nAAAAAAAAAAAAAAAAA",indexes.shape)
         index = int(indexes[0][0])
-        print("BBBBBBBBBb", index)
         selected_cmd = infos["admissible_commands"][index]
+        
         rnn_act = self.word2id[selected_cmd]
-        print(selected_cmd)
-        print(rnn_act)
         act[rnn_act] = 1
+
         self.model.rnn_state = rnn_next_state(self.model.RNN, obs_emb , act, self.model.rnn_state)
 
         if self.mode == "test":
-            if done:
-                self.model.reset_hidden(1)
+            #if done:
+                #self.model.reset_hidden(1)
             return action
         
         self.no_train_step += 1
         
-        if self.transitions:
-            reward = score - self.last_score  # Reward is the gain/loss in score.
-            self.last_score = score
-            if infos["won"]:
-                reward += 100
-            if infos["lost"]:
-                reward -= 100
+        #if self.transitions:
+        reward = score - self.last_score  # Reward is the gain/loss in score.
+        self.last_score = score
+        if infos["won"]:
+            print("we win")
+            reward += 100
+        if infos["lost"]:
+            reward -= 100
                 
             self.transitions[-1][0] = reward  # Update reward information.
         
@@ -252,13 +254,16 @@ class NeuralAgent:
             returns, advantages = self._discount_rewards(values)
             
             loss = 0
+            #print(self.transitions)
+            
+            
             for transition, ret, advantage in zip(self.transitions, returns, advantages):
                 reward, indexes_, outputs_, values_ = transition
                 
                 advantage        = advantage.detach() # Block gradients flow here.
-                probs            = F.softmax(outputs_, dim=2)
+                probs            = F.softmax(outputs_, dim=0)
                 log_probs        = torch.log(probs)
-                log_action_probs = log_probs.gather(2, indexes_)
+                log_action_probs = log_probs.gather(0, indexes_[0])
                 policy_loss      = (-log_action_probs * advantage).sum()
                 value_loss       = (.5 * (values_ - ret) ** 2.).sum()
                 entropy     = (-probs * log_probs).sum()
@@ -275,16 +280,21 @@ class NeuralAgent:
                 msg += "  ".join("{}: {:.3f}".format(k, np.mean(v)) for k, v in self.stats["mean"].items())
                 msg += "  " + "  ".join("{}: {}".format(k, np.max(v)) for k, v in self.stats["max"].items())
                 msg += "  vocab: {}".format(len(self.id2word))
-                print(msg)
+                #print(msg)
                 self.stats = {"max": defaultdict(list), "mean": defaultdict(list)}
+            #print(loss)
             
+            loss = torch.from_numpy(np.array(float(loss)))
+            #print(type(loss))
+            loss = Variable(loss.cuda(), requires_grad = True)
+            #loss = loss.to(device)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), 40)
             self.optimizer.step()
             self.optimizer.zero_grad()
         
             self.transitions = []
-            self.model.reset_hidden(1)
+            #self.model.reset_hidden(1)
         else:
             # Keep information about transitions for Truncated Backpropagation Through Time.
             self.transitions.append([None, indexes, outputs, values])  # Reward will be set on the next call
