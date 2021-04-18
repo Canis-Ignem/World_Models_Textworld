@@ -38,7 +38,7 @@ HyperParams = namedtuple('HyperParams', ['num_steps',
 def default_hps():
       return HyperParams(num_steps= 4000,
                      max_seq_len=100,
-                     input_seq_width=512+437,    # width of our data (512 + 437 actions)
+                     input_seq_width=512+454,    # width of our data (512 + 437 actions)
                      output_seq_width=512,    # width of our data is 32
                      rnn_size=512,    # number of rnn cells
                      batch_size=30,   # minibatch sizes
@@ -331,7 +331,7 @@ def rnn_init_state(rnn):
   return rnn.sess.run(rnn.initial_state)
 
 def rnn_next_state(rnn, z, a, prev_state):
-  input_x = np.concatenate((z.reshape((1, 1, 512)), a.reshape((1, 1, 437))), axis=2)
+  input_x = np.concatenate((z.reshape((1, 1, 512)), a.reshape((1, 1, 454))), axis=2)
   feed = {rnn.input_x: input_x, rnn.initial_state[0] : prev_state[0], rnn.initial_state[1] : prev_state[1]}
   return rnn.sess.run(rnn.final_state, feed)
 

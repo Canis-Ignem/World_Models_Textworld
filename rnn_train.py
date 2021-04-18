@@ -15,10 +15,10 @@ import matplotlib.pyplot as plt
 #import use
 
 #The instance of the actual rnn in trainning
-seq = 5
+seq = 10
 #rnn_actual_cost = "rnn_con_similarity_",str(seq),".json"
-rnn_actual_cost = "simple_game_5_cost1024.json"
-rnn_actual_simm = "simple_game_5_simm1024.json"
+rnn_actual_cost = "simple_game_7_cost_SGD_512.json"
+rnn_actual_simm = "simple_game_7_simm_SGD_512.json"
 
 from rnn import HyperParams, MDNRNN, rnn_next_state, rnn_init_state, get_pi_idx, sample_sequence
 
@@ -36,11 +36,11 @@ if not os.path.exists(initial_z_save_path):
 # 8 actions for coin collector
 # 454 actions for simple game
 def default_hps():
-  return HyperParams(num_steps= 2000,
+  return HyperParams(num_steps= 4000,
                      max_seq_len=seq,
                      input_seq_width=512+454,    # width of our data (512 + 437 actions)
                      output_seq_width=512,    # width of our data is 32
-                     rnn_size=1024,    # number of rnn cells
+                     rnn_size=512,    # number of rnn cells
                      batch_size=30,   # minibatch sizes
                      grad_clip=1.0,
                      num_mixture=5,   # number of mixtures in MDN
@@ -49,7 +49,7 @@ def default_hps():
                      min_learning_rate=0.000001,
                      use_layer_norm=0, # set this to 1 to get more stable results (less chance of NaN), but slower
                      use_recurrent_dropout=1,
-                     recurrent_dropout_prob=0.60,
+                     recurrent_dropout_prob=0.80,
                      use_input_dropout=0,
                      input_dropout_prob=0.90,
                      use_output_dropout=0,
@@ -162,7 +162,7 @@ def validate(rnn):
   rnn.is_training = False
   #Valid
   valid_data = pd.read_pickle("./Datasets/simple_valid_preprocessed.pkl")
-  valid_data = valid_data.values[:3000]
+  valid_data = valid_data.values[:10000]
   valid_data = dh.create_val_data(valid_data)
 
   OUTWIDTH = hps.output_seq_width
@@ -375,16 +375,16 @@ def SGD(epochs):
     for i in range(epochs):
           
       
-      data = dh.SGD_data('./Datasets/train1.pkl',600000)
+      data = dh.SGD_data('./Datasets/simple_train_preprocessed.pkl',500000)
       #valid_data = dh.SGD_data('./Datasets/valid1.pkl',250000)
       
       #print(start, hps.batch_size)
-      print("Getting started with epoch: ",i)
+      #print("Getting started with epoch: ",i)
       start = 0
-
+      curr_learning_rate = hps.learning_rate
       while start+hps.batch_size < data.shape[0]-1:
             
-        print(start)
+        #print(start)
         
         step = rnn.sess.run(rnn.global_step)   
         
@@ -396,7 +396,7 @@ def SGD(epochs):
         start += hps.batch_size
         #print(start+hps.batch_size)
         
-        curr_learning_rate = (hps.learning_rate-hps.min_learning_rate) * (hps.decay_rate) ** step + hps.min_learning_rate
+        
         
         feed = {rnn.input_x: inputs, rnn.output_x: outputs, rnn.lr: curr_learning_rate}
         (train_cost, state, train_step,_) = rnn.sess.run([rnn.cost, rnn.final_state, rnn.global_step, rnn.train_op], feed)
@@ -406,13 +406,9 @@ def SGD(epochs):
         time_taken = end_time-start_time
         start_time = time.time()
         
-        
-        
-        
-      output_log = "step: %d, lr: %.6f, cost: %.4f, train_time_taken: %.4f" % (step, curr_learning_rate, train_cost, time_taken)
-      print(output_log)
-      if( i % 1 == 0 ):
-          rnn.is_training = 0
+        if start+hps.batch_size % 50:
+          
+          rnn.is_training = False
 
           valid_inputs , valid_outputs = dh.create_batch(test_data, 30, seq)
 
@@ -424,7 +420,7 @@ def SGD(epochs):
           coss_sim = validate(rnn)
           coss_simmilarity_list_test.append(coss_sim)
 
-          if coss_simmilarity > best_simm:
+          if coss_sim > best_simm:
             rnn.save_json(os.path.join(model_save_path, rnn_actual_simm))
             best_simm = coss_sim 
             
@@ -437,7 +433,13 @@ def SGD(epochs):
             rnn.save_json(os.path.join(model_save_path, rnn_actual_cost))
             best_cost = valid_cost 
 
-          rnn.is_training = 1
+          curr_learning_rate = curr_learning_rate * 0.9
+          rnn.is_training = True
+        
+        
+      output_log = "step: %d, lr: %.6f, cost: %.4f, train_time_taken: %.4f" % (step, curr_learning_rate, train_cost, time_taken)
+      print(output_log)
+      
     plt.plot(train_cost_list)
     plt.plot(test_cost_list)
     plt.show()
@@ -447,4 +449,4 @@ def SGD(epochs):
     plt.show()      
 
 
-train()
+SGD(10)

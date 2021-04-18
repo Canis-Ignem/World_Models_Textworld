@@ -3,6 +3,7 @@ import re
 from typing import List, Mapping, Any, Optional
 from collections import defaultdict
 import numpy as np
+import pandas as pd
 
 #TextWorld
 import textworld
@@ -17,6 +18,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from rnn import MDNRNN, default_hps, rnn_output,rnn_next_state
+import data_handler as dh
 
 from use import USE
 
@@ -31,6 +33,8 @@ MODE_ZH = 4
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_grad_enabled(True)
 action_dic = { 0:'look', 1:'inventory', 2:'go north', 3:'go east', 4:'go west', 5:'go south', 6:'take coin', 7:'examine coin' }
+df = pd.read_pickle("Datasets/simple_train_data.pkl")
+
 
 print(device)
 
@@ -50,7 +54,7 @@ class CommandScorer(nn.Module):
         #Imagination
         self.hps = default_hps()
         self.RNN = MDNRNN(self.hps)
-        self.RNN.load_json("tf_rnn/valid_statico_5.json")
+        self.RNN.load_json("tf_rnn/simple_game_5_cost2.json")
         self.rnn_state = self.RNN.sess.run(self.RNN.initial_state)
 
         ###################################################
@@ -60,7 +64,8 @@ class CommandScorer(nn.Module):
         #self.state_hidden = torch.zeros(1, 1, hidden_size, device=device)
         #intermediary linear layer to avoid an abrupt drop from 512 to 1
         self.critic_h1    = nn.Linear(1024, hidden_size)
-        self.critic       = nn.Linear(hidden_size, 1)
+        self.critic_h2    = nn.Linear(hidden_size, hidden_size//2)
+        self.critic       = nn.Linear(1024, 1)
         
         self.att_cmd      = nn.Linear(hidden_size * 3, 1)
     
@@ -85,8 +90,9 @@ class CommandScorer(nn.Module):
         #state_output, state_hidden = self.state_gru(encoder_hidden, self.state_hidden)
 
         memory = torch.from_numpy(memory)
-        h1 = self.critic_h1(memory) #Can be changed to use the embedding
-        value = self.critic(h1)
+        #h1 = self.critic_h1(memory) #Can be changed to use the embedding
+        #h2 = self.critic_h2(h1)
+        value = self.critic(memory)
 
         # Attention network over the commands.
         #cmds_embedding = self.embedding.forward(commands)
@@ -138,8 +144,9 @@ class NeuralAgent:
         self._initialized = False
         self._epsiode_has_started = False
         self.id2word = { 0:'look', 1:'inventory', 2:'go north', 3:'go east', 4:'go west', 5:'go south', 6:'take coin', 7:'examine coin' }
-        self.word2id = { 'look':0, 'inventory':1, 'go north':2, 'go east':3, 'go west':4, 'go south':5, 'take coin':6, 'examine coin':7 }
-        self.UPDATE_FREQUENCY = 1
+        actions = dh.get_unique_actions(df)
+        self.word2id = dh.action_to_num(actions) #{ 'look':0, 'inventory':1, 'go north':2, 'go east':3, 'go west':4, 'go south':5, 'take coin':6, 'examine coin':7 }
+        self.UPDATE_FREQUENCY = 2
 
         self.model = CommandScorer(input_size=self.MAX_VOCAB_SIZE, hidden_size=512) #The input size might be removed since it is not used
         self.optimizer = optim.Adam(self.model.parameters(), 0.00003)
@@ -215,13 +222,14 @@ class NeuralAgent:
         #commands_tensor = self._process(infos["admissible_commands"])
         
         # Get our next action and value prediction.
+        obs = obs.replace("\n","")
         outputs, indexes, values = self.model(obs, infos["admissible_commands"])
         action = infos["admissible_commands"][indexes[0]]
         
-        obs_emb = self.model.embedding.embed(infos["description"])
+        obs_emb = self.model.embedding.embed(obs)
         obs_emb = np.reshape(obs_emb, 512)
 
-        act = np.zeros(8)
+        act = np.zeros(454)
         index = int(indexes[0][0])
         selected_cmd = infos["admissible_commands"][index]
         
@@ -237,15 +245,14 @@ class NeuralAgent:
         
         self.no_train_step += 1
         
-        #if self.transitions:
-        reward = score - self.last_score  # Reward is the gain/loss in score.
-        self.last_score = score
-        if infos["won"]:
-            print("we win")
-            reward += 100
-        if infos["lost"]:
-            reward -= 100
-                
+        if self.transitions:
+            reward = score - self.last_score  # Reward is the gain/loss in score.
+            self.last_score = score
+            if infos["won"]:
+                reward += 100
+            if infos["lost"]:
+                reward -= 100
+  
             self.transitions[-1][0] = reward  # Update reward information.
         
         self.stats["max"]["score"].append(score)
@@ -275,19 +282,16 @@ class NeuralAgent:
                 self.stats["mean"]["entropy"].append(entropy.item())
                 self.stats["mean"]["confidence"].append(torch.exp(log_action_probs).item())
             
-            if self.no_train_step % self.LOG_FREQUENCY == 0:
+            if self.no_train_step % 10 == 0:
                 msg = "{}. ".format(self.no_train_step)
                 msg += "  ".join("{}: {:.3f}".format(k, np.mean(v)) for k, v in self.stats["mean"].items())
                 msg += "  " + "  ".join("{}: {}".format(k, np.max(v)) for k, v in self.stats["max"].items())
-                msg += "  vocab: {}".format(len(self.id2word))
-                #print(msg)
+                msg += "  vocab: {}".format(len(self.word2id))
+                print(msg)
                 self.stats = {"max": defaultdict(list), "mean": defaultdict(list)}
-            #print(loss)
             
             loss = torch.from_numpy(np.array(float(loss)))
-            #print(type(loss))
             loss = Variable(loss.cuda(), requires_grad = True)
-            #loss = loss.to(device)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), 40)
             self.optimizer.step()

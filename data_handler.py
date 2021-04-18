@@ -144,11 +144,11 @@ def SGD_data(path,size):
     for i in range(size):
         ohe[ data[i][1] ] = 1
         final_data = np.concatenate( (data[i][0],ohe) )
-        ohe = np.zeros(8)
+        ohe = np.zeros(454)
         final_dataset[i] = final_data
 
-    final_dataset= np.reshape(final_dataset,(int(size/5),5,512+454))
-    rnd = np.random.permutation(int(size/5)) 
+    final_dataset= np.reshape(final_dataset,(int(size/10),10,512+454))
+    rnd = np.random.permutation(int(size/10)) 
     final_dataset = final_dataset[rnd]
 
     return final_dataset
