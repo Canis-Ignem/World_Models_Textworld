@@ -4,10 +4,10 @@ import gym
 import textworld.gym
 from matplotlib import pyplot as plt
 import numpy as np
-import A2C
+import A2C_ablated
 from time import time
 
-agent = A2C.NeuralAgent()
+agent = A2C_ablated.NeuralAgent()
 
 def play(agent, path, max_step=100, nb_episodes=5, verbose=True):
     infos_to_request = agent.infos_to_request
@@ -68,5 +68,5 @@ def play(agent, path, max_step=100, nb_episodes=5, verbose=True):
 
 agent.train()
 starttime = time()
-play(agent,"games/tw-simple-rDense+gBrief+test-house-GP-Mn8oTkr2fvv8TX1.ulx", nb_episodes=300)
+play(agent,"games/tw-simple-rDense+gBrief+test-house-GP-Mn8oTkr2fvv8TX1.ulx", nb_episodes=100)
 print("Trained in {:.2f} secs".format(time() - starttime))
