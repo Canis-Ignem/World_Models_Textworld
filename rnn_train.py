@@ -15,10 +15,10 @@ import matplotlib.pyplot as plt
 #import use
 
 #The instance of the actual rnn in trainning
-seq = 10
+seq = 5
 #rnn_actual_cost = "rnn_con_similarity_",str(seq),".json"
-rnn_actual_cost = "simple_game_7_cost_SGD_512.json"
-rnn_actual_simm = "simple_game_7_simm_SGD_512.json"
+rnn_actual_cost = "simple_game_5_cost_SGD_512_2.json"
+rnn_actual_simm = "simple_game_5_simm_SGD_512_2.json"
 
 from rnn import HyperParams, MDNRNN, rnn_next_state, rnn_init_state, get_pi_idx, sample_sequence
 
@@ -198,7 +198,7 @@ def validate(rnn):
       chosen_mean[j] = mean[j][idx]
       chosen_logstd[j] = logstd[j][idx]
 
-    rand_gaussian = np.random.randn(OUTWIDTH)*np.sqrt(1.0)
+    rand_gaussian = np.random.randn(OUTWIDTH)*np.sqrt(0.1)
     next_x = chosen_mean+np.exp(chosen_logstd)*rand_gaussian
 
     prev_x[0][0] = next_x
@@ -272,7 +272,7 @@ def sample(rnn):
       chosen_mean[j] = mean[j][idx]
       chosen_logstd[j] = logstd[j][idx]
 
-    rand_gaussian = np.random.randn(OUTWIDTH)*np.sqrt(1.0)
+    rand_gaussian = np.random.randn(OUTWIDTH)*np.sqrt(0.1)
     next_x = chosen_mean+np.exp(chosen_logstd)*rand_gaussian
 
     prev_x[0][0] = next_x
@@ -315,7 +315,7 @@ def train_sim(rnn):
     feed = {rnn.input_x: input_x, rnn.initial_state[0] : prev_state[0], rnn.initial_state[1] : prev_state[1] }
     [logmix, mean, logstd, next_state] = rnn.sess.run([rnn.out_logmix, rnn.out_mean, rnn.out_logstd, rnn.final_state], feed)
 
-    logmix2 = np.copy(logmix)/1.0
+    logmix2 = np.copy(logmix)/1
 
     logmix2 -= logmix2.max()
     logmix2 = np.exp(logmix2)
@@ -333,7 +333,7 @@ def train_sim(rnn):
       chosen_mean[j] = mean[j][idx]
       chosen_logstd[j] = logstd[j][idx]
 
-    rand_gaussian = np.random.randn(OUTWIDTH)*np.sqrt(1.0)
+    rand_gaussian = np.random.randn(OUTWIDTH)*np.sqrt(0.1)
     next_x = chosen_mean+np.exp(chosen_logstd)*rand_gaussian
 
     prev_x[0][0] = next_x
