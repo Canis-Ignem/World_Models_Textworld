@@ -449,4 +449,4 @@ def SGD(epochs):
     plt.show()      
 
 
-SGD(10)
+train()
